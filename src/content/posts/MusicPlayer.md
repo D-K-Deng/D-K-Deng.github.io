@@ -1,3 +1,99 @@
+---
+
+title: Add a Local Music Player to Astro Sidebar
+published: 2025-07-15
+description: 'A step-by-step guide to integrating a local audio player in the Astro sidebar using Svelte.'
+# image: ''
+tags: [Astro]
+category:  'Web'
+series: 'Tutorial'
+draft: false
+
+---
+
+::github{repo="D-K-Deng/Music-Player-to-Astro-Sidebar"}
+
+# Add a Local Music Player to Astro Sidebar
+
+This tutorial shows you how to add a local music player to your Astro project's sidebar. The player supports multiple tracks, album cover display, playback controls, and progress tracking.
+
+## Features
+
+- The player automatically loads and plays the first track.
+- Track titles scroll horizontally if they overflow.
+- Clicking on the album cover toggles play and pause.
+- Tailwind's `dark` class is supported for dark mode styling.
+
+## Technology Stack
+
+- Astro
+- Svelte (for the interactive player)
+- Tailwind CSS (for styling)
+
+## Feature Overview
+
+You will see a compact music player in your sidebar with:
+
+- Album cover (animated when playing)
+- Track title with scrolling effect
+- Time display and seek bar
+- Previous/Next/Play buttons
+
+## Step 1: Prepare Music Files
+
+1. Create a folder named `music` inside the `public/` directory of your Astro project.
+2. Place your `.mp3` files and corresponding cover images inside it.
+3. Use descriptive names to keep track of songs and images.
+
+Example structure:
+
+```
+public/music/
+├── baby_girl.mp3
+├── aiaiai.mp3
+├── 3.mp3
+├── cover.jpg
+├── cover2.jpg
+├── cover3.jpg
+```
+
+## Step 2: Create Music Player Components
+
+### 1. Create `Music.astro`
+
+Path: `src/components/widget/Music.astro`
+
+```astro
+---
+import LocalPlayer from './LocalPlayer.svelte';
+
+const audioList = [
+  {
+    name: 'Baby Girl - DKD',
+    src: '/music/baby_girl.mp3',
+    cover: '/music/cover.jpg'
+  },
+  {
+    name: '爱爱爱 - DKD',
+    src: '/music/aiaiai.mp3',
+    cover: '/music/cover2.jpg'
+  },
+  {
+    name: '歌手与模特儿 - DKD',
+    src: '/music/3.mp3',
+    cover: '/music/cover3.jpg'
+  }
+];
+---
+
+<LocalPlayer client:load {audioList} />
+```
+
+### 2. Create `LocalPlayer.svelte`
+
+Path: `src/components/widget/LocalPlayer.svelte`
+```astro
+---
 <script>
   import { onMount, onDestroy, tick } from 'svelte';
 
@@ -237,3 +333,53 @@
   }
   .ctrl svg { width: 16px; height: 16px; fill: currentColor; }
 </style>
+---
+## Step 3: Add the Music Player to Sidebar
+
+### Modify `Sidebar.astro`
+
+Path: `src/components/widget/Sidebar.astro`
+
+1. Import the `Music` component at the top:
+
+```astro
+import Music from "./Music.astro";
+```
+
+2. Insert the music player block below the `<Tag>` component:
+
+```astro
+<div id="music" class="flex flex-col w-full gap-4">
+  <Music></Music>
+</div>
+```
+
+3. The relevant portion of the final `Sidebar.astro` should look like this:
+
+```astro
+<div id="sidebar" class:list={[className, "w-full"]}>
+  <div class="flex flex-col w-full gap-4 mb-4">
+    <Profile></Profile>
+  </div>
+  <div id="sidebar-sticky" class="transition-all duration-700 flex flex-col w-full gap-4 top-4 sticky top-4">
+    <div id="series" class="flex flex-col w-full gap-4">
+      { series && <Series series={ series }></Series> }
+    </div>
+    <Categories class="onload-animation" style="animation-delay: 150ms"></Categories>
+    <Tag class="onload-animation" style="animation-delay: 200ms"></Tag>
+    <div id="music" class="flex flex-col w-full gap-4">
+      <Music></Music>
+    </div>
+  </div>
+</div>
+```
+
+
+## Full Code Summary
+
+- `public/music/` contains your audio files and cover images
+- `src/components/widget/Music.astro` loads the track list and renders the player
+- `src/components/widget/LocalPlayer.svelte` handles playback logic
+- `Sidebar.astro` includes the `<Music />` component in the layout
+
+Once completed, your Astro sidebar will have a fully functional and customizable music player.

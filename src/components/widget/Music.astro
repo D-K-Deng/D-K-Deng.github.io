@@ -1,11 +1,27 @@
 ---
 import LocalPlayer from './LocalPlayer.svelte';
 
-// 这里一定要和你 public 目录里的文件名一致
-const src = '/music/baby_girl.mp3';
-// 如果没有封面，可以把 cover.jpg 放到 public/music/ 下
-const cover = '/music/cover.jpg';
-// 显示在侧边栏里的歌名
-const name = 'Baby Girl - DKD';
+// Assume public/music/ contains:
+// track1.mp3, track2.mp3, track3.mp3, and corresponding cover.jpg
+const audioList = [
+  {
+    name: 'Baby Girl - DKD',
+    src: '/music/baby_girl.mp3',
+    cover: '/music/cover.jpg'
+  },
+  {
+    name: '爱爱爱 - DKD',
+    src: '/music/aiaiai.mp3',
+    cover: '/music/cover2.jpg'
+  },
+  {
+    name: '歌手与模特儿 - DKD',
+    src: '/music/3.mp3',
+    cover: '/music/cover3.jpg'
+  }
+  // add more tracks as needed
+];
 ---
-<LocalPlayer client:load {src} {cover} {name} />
+
+<LocalPlayer client:load {audioList} />
+

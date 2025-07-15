@@ -26,7 +26,7 @@ import { pluginCustomCopyButton } from "./src/plugins/expressive-code/custom-cop
 import fuwariLinkCard from "./src/plugins/fuwari-link-card";
 // https://astro.build/config
 export default defineConfig({
-	site: "https://fuwari.vercel.app/",
+	site: "https://d-k-deng.github.io/",
 	base: "/",
 	trailingSlash: "always",
 	integrations: [
