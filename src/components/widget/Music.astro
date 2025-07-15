@@ -1,0 +1,11 @@
+---
+import LocalPlayer from './LocalPlayer.svelte';
+
+// 这里一定要和你 public 目录里的文件名一致
+const src = '/music/baby_girl.mp3';
+// 如果没有封面，可以把 cover.jpg 放到 public/music/ 下
+const cover = '/music/cover.jpg';
+// 显示在侧边栏里的歌名
+const name = 'Baby Girl - DKD';
+---
+<LocalPlayer client:load {src} {cover} {name} />

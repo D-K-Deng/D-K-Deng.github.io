@@ -4,6 +4,7 @@ import Categories from "./Categories.astro";
 import Profile from "./Profile.astro";
 import Tag from "./Tags.astro";
 import Series from "./Series.astro";
+import Music from "./Music.astro";
 interface Props {
 	class?: string;
 	headings?: MarkdownHeading[];
@@ -23,5 +24,8 @@ const series = Astro.props.series;
         </div>
         <Categories class="onload-animation" style="animation-delay: 150ms"></Categories>
         <Tag class="onload-animation" style="animation-delay: 200ms"></Tag>
+        <div id="music" class="flex flex-col w-full gap-4">
+            <Music></Music>
+        </div>
     </div>
 </div>

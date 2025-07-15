@@ -11,7 +11,8 @@ series: "Papers"
 ---
 
 
-<font size=4>You can use **[this link](https://dl.acm.org/doi/10.1145/3672539.3686730)** that direct to ACM library to access the article.</font>
+You can use **[this link](https://dl.acm.org/doi/10.1145/3672539.3686730)** that direct to ACM library to access the article.
+
 
 ![](/image/f1.jpg)
 
