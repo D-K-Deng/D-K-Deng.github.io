@@ -1,0 +1,126 @@
+---
+import MainGridLayout from '@layouts/MainGridLayout.astro';
+import { i18n } from '@i18n/translation';
+import I18nKey from '@i18n/i18nKey';
+import { getAllSeriesGroups } from '../utils/content-utils';
+
+let groups = await getAllSeriesGroups();
+
+groups = groups.sort((a, b) =>
+  a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+);
+
+groups.forEach(group => {
+  group.seriesList = group.seriesList.sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+  );
+
+  group.seriesList.forEach(series => {
+    series.posts = series.posts.sort((a, b) =>
+      new Date(b.data.published).getTime() - new Date(a.data.published).getTime()
+    );
+  });
+});
+
+
+---
+
+<MainGridLayout title={i18n(I18nKey.series)}>
+  <div class="bg-[var(--card-bg)] rounded-2xl p-8 space-y-12">
+
+    <div class="mx-auto text-center">
+      <h1 class="text-4xl font-bold text-[var(--primary)] dark:text-white">
+        {i18n(I18nKey.series)}
+      </h1>
+      <div class="w-16 h-1 bg-[var(--primary)] mx-auto my-4 rounded"></div>
+      <p class="text-[#ababab] dark:text-white">
+        Browse contents organized by series to explore related content and follow topics in-depth
+      </p>
+    </div>
+
+    {groups.map(group => (
+      <section class="space-y-6">
+        <div class="flex items-center">
+          <div class="w-1 h-6 bg-[var(--primary)] rounded mr-3"></div>
+          <h2 class="text-2xl font-semibold text-black dark:text-white">
+            {group.name}
+          </h2>
+        </div>
+        <p class="text-gray-600 dark:text-gray-400">
+          {group.description.replace(/^[\"“”]+|[\"“”]+$/g, '')}
+        </p>
+
+        <div class="flex flex-col gap-6">
+          {group.seriesList.map(series => {
+            const desc = series.description.replace(/^[\"“”]+|[\"“”]+$/g, '');
+            const count = series.posts.length;
+            const label = count === 1 ? '1 article' : `${count} articles`;
+            return (
+              <details
+                class="
+                  w-full
+                  bg-[var(--card-bg)]
+                  rounded-2xl
+                  border border-gray-200 dark:border-gray-700
+                  shadow-sm hover:shadow-lg
+                  hover:bg-[var(--hover-bg)] dark:hover:bg-[var(--hover-bg)]
+                  transition-shadow transition-colors
+                "
+              >
+                <summary
+                  class="
+                    list-none [&::-webkit-details-marker]:hidden
+                    cursor-pointer
+                    p-6
+                  "
+                >
+
+                  <div class="flex justify-between items-center">
+                    <h3 class="text-xl font-medium text-black dark:text-white">
+                      {series.name}
+                    </h3>
+                    <span class="text-sm text-gray-500 dark:text-gray-400">
+                      {label}
+                    </span>
+                  </div>
+
+                  <p class="text-gray-600 dark:text-gray-400 mt-2 mb-4">
+                    {desc}
+                  </p>
+                  <div class="border-t border-gray-200 dark:border-gray-700"></div>
+                </summary>
+
+
+                <ul class="flex flex-col gap-2 p-6 pt-0">
+                  {series.posts.map(post => (
+                    <li>
+                      <a
+                        href={`/posts/${post.slug}/`}
+                        class="
+                          block w-full
+                          bg-transparent
+                          rounded-md p-4
+                          flex justify-between items-center
+                          hover:bg-[#f0ebfd] dark:hover:bg-[#302b3d]
+                          hover:shadow-md
+                          transition-colors transition-shadow
+                        "
+                      >
+                        <span class="text-black dark:text-white">
+                          {post.data.title}
+                        </span>
+                        <time class="text-sm text-gray-500 dark:text-gray-400 ml-4">
+                          {new Date(post.data.published).toLocaleDateString()}
+                        </time>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            );
+          })}
+        </div>
+      </section>
+    ))}
+  </div>
+</MainGridLayout>

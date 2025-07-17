@@ -1,0 +1,79 @@
+---
+import I18nKey from "../../i18n/i18nKey";
+import { i18n } from "../../i18n/translation";
+import { getPostSeries } from "../../utils/content-utils";
+import { getPostUrlBySlug } from "../../utils/url-utils";
+import WidgetLayout from "./WidgetLayout.astro";
+
+const COLLAPSED_HEIGHT = "7.5rem";
+
+interface Props {
+  class?: string;
+  style?: string;
+  series: string;
+  slug?: string;
+}
+
+const { class: className, style, series: seriesName, slug: currentSlug } = Astro.props as Props;
+let posts = await getPostSeries(seriesName);
+posts = posts.sort(
+  (a, b) => new Date(b.data.published).getTime() - new Date(a.data.published).getTime()
+);
+const isCollapsed = posts.length >= 10;
+---
+
+<WidgetLayout
+  name={i18n(I18nKey.series) + " - " + posts[0].data.series}
+  id="series"
+  isCollapsed={isCollapsed}
+  collapsedHeight={COLLAPSED_HEIGHT}
+  class={className}
+  style={style}
+>
+  <div class="flex flex-col gap-1">
+    {posts.map(post => {
+      const isActive = post.slug === currentSlug;
+      
+      const linkClass = `
+        btn-plain group h-10 w-full rounded-lg
+        hover:bg-[var(--btn-plain-bg-hover)]
+        ${isActive ? "bg-[var(--btn-plain-bg-hover)]" : ""}
+      `.trim();
+
+      const dotClass = `
+        transition-all mx-auto rounded outline-4 z-50
+        ${isActive
+          ? "h-5 w-1 bg-[var(--primary)] outline-[var(--btn-plain-bg-hover)]"
+          : "h-1 w-1 bg-[oklch(0.5_0.05_var(--hue))] outline-[var(--card-bg)] group-hover:h-5 group-hover:bg-[var(--primary)] group-hover:outline-[var(--btn-plain-bg-hover)] group-active:outline-[var(--btn-plain-bg-active)]"
+        }
+      `.trim();
+
+      const titleClass = `
+        w-[85%] text-left transition-all text-75 pr-15
+        whitespace-nowrap overflow-ellipsis overflow-hidden
+        group-hover:text-[var(--primary)]
+        ${isActive ? "font-bold" : ""}
+      `.trim();
+
+      return (
+        <a
+          href={getPostUrlBySlug(post.slug)}
+          aria-label={post.data.title}
+          aria-current={isActive ? "page" : undefined}
+          class={linkClass}
+        >
+          <div class="w-[15%] md:w-[10%] relative dash-line h-full flex items-center">
+            <div class={dotClass}></div>
+          </div>
+          <div
+            class={titleClass}
+            title={post.data.title}
+            style={isActive ? "color: var(--primary)" : undefined}
+          >
+            {post.data.title}
+          </div>
+        </a>
+      );
+    })}
+  </div>
+</WidgetLayout>
