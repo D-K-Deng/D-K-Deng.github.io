@@ -1,0 +1,27 @@
+---
+import LocalPlayer from "./LocalPlayer.svelte";
+
+// Assume public/music/ contains:
+// track1.mp3, track2.mp3, track3.mp3, and corresponding cover.jpg
+const audioList = [
+	{
+		name: "Baby Girl - DKD",
+		src: "/music/baby_girl.mp3",
+		cover: "/music/cover.jpg",
+	},
+	{
+		name: "爱爱爱 - DKD",
+		src: "/music/aiaiai.mp3",
+		cover: "/music/cover2.jpg",
+	},
+	{
+		name: "歌手与模特儿 - DKD",
+		src: "/music/3.mp3",
+		cover: "/music/cover3.jpg",
+	},
+	// add more tracks as needed
+];
+---
+
+<LocalPlayer client:load {audioList} />
+
