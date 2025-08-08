@@ -1,0 +1,40 @@
+---
+import type { MarkdownHeading } from "astro";
+
+import Categories from "./Categories.astro";
+import Music from "./Music.astro";
+import Profile from "./Profile.astro";
+import Series from "./Series.astro";
+import Tag from "./Tags.astro";
+
+interface Props {
+  class?: string;
+  headings?: MarkdownHeading[];
+  series?: string;
+  slug?: string;
+}
+
+const { class: className, series, slug: currentSlug } = Astro.props as Props;
+---
+
+<div id="sidebar" class:list={[className, "w-full"]}>
+  <div class="flex flex-col w-full gap-4 mb-4">
+    <Profile />
+  </div>
+
+  <div
+    id="sidebar-sticky"
+    class="transition-all duration-700 flex flex-col w-full gap-4 sticky top-4"
+  >
+    <div id="series" class="flex flex-col w-full gap-4">
+      {series && <Series series={series} slug={currentSlug} />}
+    </div>
+
+    <Categories class="onload-animation" style="animation-delay: 150ms" />
+    <Tag class="onload-animation" style="animation-delay: 200ms" />
+
+    <div id="music" class="flex flex-col w-full gap-4">
+      <Music />
+    </div>
+  </div>
+</div>
