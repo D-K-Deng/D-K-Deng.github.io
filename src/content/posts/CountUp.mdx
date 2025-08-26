@@ -1,0 +1,294 @@
+---
+
+title: Inline Count-Up Numbers in Astro
+published: 2025-08-26
+description: 'Animate inline numbers inside prose with a Svelte CountUp component, MDX-friendly usage, and an optional left-to-right highlighter synced to the counter.'
+# image: ''
+tags: [Astro]
+category: 'Tutorials'
+draft: false
+seriesCategory: "Tutorials"
+seriesCategoryDescription: "My Tutorials"
+series: "Astro"
+seriesDescription: "Step-by-step tutorials for using Astro"
+
+---
+
+::github{repo="Inline-Count-Up-Numbers-in-Astro"}
+
+
+import CountUp from "@components/CountUp.svelte";
+
+# Astro + Svelte Count-Up (Inline) — Complete Guide
+
+Animate numbers inside a sentence and start the animation only when visible. Supports an optional plus sign, prefix/suffix, accent styling (color/weight/size), and a left→right highlighter sweep that runs in sync with the number.
+
+## Quick Preview
+
+Use the component inline within MDX:
+
+This is an example: &nbsp;<strong style="color:#ab8ae3"><CountUp end={370200} format="standard" plus={true} duration={2500} suffix=" plays" client:visible highlight /></strong>.
+
+## 1) Enable MDX
+
+```bash
+pnpm add @astrojs/mdx
+```
+
+In `astro.config.mjs`:
+
+```js
+// astro.config.mjs
+import { defineConfig } from 'astro/config';
+import mdx from '@astrojs/mdx';
+
+export default defineConfig({
+  integrations: [mdx()],
+});
+```
+
+:::caution 
+
+Try to put `mdx()` last in `integrations`
+
+Order matters. Place the MDX integration at the **end** of the `integrations` array so other plugins can run their transforms first. Some integrations (e.g., `astro-expressive-code`) need to process Markdown/MDX **before** MDX takes over, otherwise styles or components may not render correctly.
+
+```js
+// astro.config.mjs
+import { defineConfig } from 'astro/config';
+import expressiveCode from 'astro-expressive-code';
+import mdx from '@astrojs/mdx';
+
+export default defineConfig({
+  integrations: [
+    expressiveCode(), // run first so it can transform content
+    mdx(),            // keep MDX last
+  ],
+});
+```
+:::
+
+## 2) Create the component: `src/components/CountUp.svelte`
+
+```svelte
+// CountUp.svelte
+<script lang="ts">
+  import { onMount } from 'svelte';
+
+  // Core
+  export let start = 0;
+  export let end = 0;
+  export let duration = 1200;        // number & highlighter animation duration (ms)
+  export let decimals = 0;
+  export let locale: string | undefined = undefined;
+  export let format: 'standard' | 'compact' = 'standard';
+
+  // Display
+  export let prefix = '';
+  export let suffix = '';
+  export let plus = false;
+
+  // Accent styling
+  export let color = '#ab8ae3';
+  export let weight: number | string = 700;
+  export let scale = 1.12;           // slightly larger than surrounding text
+
+  // Highlighter
+  export let highlight = false;
+  export let highlightColor = 'rgba(171,138,227,0.25)';
+  export let highlightRadius = '0.35em';
+  export let highlightPadY = '0.12em';
+  export let highlightPadX = '0.18em';
+
+  const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+  let display = '';
+
+  function formatNumber(n: number) {
+    const opts: Intl.NumberFormatOptions =
+      format === 'compact'
+        ? { notation: 'compact', maximumFractionDigits: 1 }
+        : { minimumFractionDigits: decimals, maximumFractionDigits: decimals };
+    return n.toLocaleString(locale, opts);
+  }
+
+  function run() {
+    const t0 = performance.now();
+    const from = start, to = end;
+
+    const tick = (now: number) => {
+      const p = Math.min(1, (now - t0) / duration);
+      const v = from + (to - from) * easeOutCubic(p);
+      display = formatNumber(p < 1 ? v : to);
+      if (p < 1) requestAnimationFrame(tick);
+    };
+
+    requestAnimationFrame(tick);
+  }
+
+  onMount(run);
+</script>
+
+<span
+  class="countup"
+  class:with-hl={highlight}
+  style="
+    --dur: {duration}ms;
+    --scale: {scale};
+    --color: {color};
+    --weight: {weight};
+    --hl-color: {highlightColor};
+    --hl-radius: {highlightRadius};
+    --pad-y: {highlightPadY};
+    --pad-x: {highlightPadX};
+  "
+>
+  {#if highlight}<span class="hl" aria-hidden="true"></span>{/if}
+  <span class="txt">{prefix}{display}{plus ? '+' : ''}{suffix}</span>
+</span>
+
+<style>
+  .countup {
+    position: relative;
+    display: inline-block;
+    line-height: 1.1;
+    font-size: calc(1em * var(--scale));
+    color: var(--color);
+    font-weight: var(--weight);
+    vertical-align: baseline;
+  }
+  .countup .txt { position: relative; z-index: 1; }
+
+  .countup.with-hl .hl {
+    position: absolute;
+    z-index: 0;
+    left: calc(var(--pad-x) * -1);
+    right: calc(var(--pad-x) * -1);
+    top: calc(var(--pad-y) * -1);
+    bottom: calc(var(--pad-y) * -1);
+    border-radius: var(--hl-radius);
+    background: var(--hl-color);
+    transform: scaleX(0);
+    transform-origin: left center;
+    animation: sweep var(--dur) ease-out forwards;
+  }
+
+  @keyframes sweep { to { transform: scaleX(1); } }
+</style>
+```
+
+## 3) Use inside MDX (inline in a sentence)
+
+```mdx
+import CountUp from "@components/CountUp.svelte";
+
+We reached&nbsp;
+<strong style="color:#ab8ae3">
+  <CountUp
+    end={370200}
+    format="standard"
+    plus={true}
+    duration={5000}
+    suffix=" plays"
+    client:visible
+    highlight
+  />
+</strong>
+ this month.
+```
+
+:::caution
+
+Frontmatter must be at the very top
+
+Astro only parses frontmatter if it appears **as the first thing in the file**.  
+Any character before the opening `---`—including whitespace, comments, or MDX `import` statements—will cause the frontmatter to be ignored, and required schema fields (e.g. `title`, `published`) will appear “missing”.
+
+**Correct:**
+```mdx
+---
+title: Inline Count-Up Numbers in Astro (Svelte + MDX)
+published: 2025-08-26
+---
+
+import CountUp from "@components/CountUp.svelte";
+
+```
+:::
+
+## 4) Use inside an Astro template (non-MDX)
+
+```astro
+---
+import CountUp from "@components/CountUp.svelte";
+---
+
+<p class="mt-3">
+  Total signups
+  <strong style="color:#ab8ae3; margin-left:.25em">
+    <CountUp end={272739} duration={1600} client:visible />
+  </strong>
+  so far.
+</p>
+```
+
+## 5) Props Reference
+
+| Name | Type | Default | Purpose |
+|---|---|---:|---|
+| `start` | `number` | `0` | Starting value |
+| `end` | `number` | `0` | Target value |
+| `duration` | `number` (ms) | `1200` | Duration for number & highlighter |
+| `decimals` | `number` | `0` | Decimal places (only for `format="standard"`) |
+| `locale` | `string \| undefined` | `undefined` | Number locale (e.g., `"en-US"`, `"zh-CN"`); defaults to browser |
+| `format` | `'standard' \| 'compact'` | `'standard'` | Standard digits vs. compact notation |
+| `prefix` | `string` | `''` | Text before the number (e.g., `'$'`) |
+| `suffix` | `string` | `''` | Text after the number (e.g., `' plays'`) |
+| `plus` | `boolean` | `false` | Appends a trailing `+` |
+| `color` | `string` | `'#ab8ae3'` | Text color |
+| `weight` | `number \| string` | `700` | Font weight |
+| `scale` | `number` | `1.12` | Relative font size vs. surrounding text |
+| `highlight` | `boolean` | `false` | Enables the highlighter sweep |
+| `highlightColor` | `string` | `rgba(171,138,227,.25)` | Highlighter color (with alpha) |
+| `highlightRadius` | `string` | `'0.35em'` | Highlighter border-radius |
+| `highlightPadY` | `string` | `'0.12em'` | Highlighter vertical inset padding |
+| `highlightPadX` | `string` | `'0.18em'` | Highlighter horizontal inset padding |
+
+## 6) Recipes
+
+**Standard digits with thousands separators**
+```mdx
+<strong style="color:#ab8ae3">
+  <CountUp end={272739} duration={1600} client:visible />
+</strong>
+```
+
+**Compact display**
+```mdx
+<CountUp end={350000} format="compact" plus client:visible />
+```
+
+**Prefix, suffix, and plus sign**
+```mdx
+<CountUp prefix="$" end={1999} suffix=" revenue" plus client:visible />
+```
+
+**With decimals and locale**
+```mdx
+<CountUp end={12345.678} decimals={2} locale="en-US" client:visible />
+```
+
+**Custom accent styling**
+```mdx
+<CountUp end={8888} color="#ff7a00" weight={800} scale={1.2} client:visible />
+```
+
+**Custom highlighter color & radius**
+```mdx
+<CountUp
+  end={1024}
+  highlight
+  highlightColor="rgba(255, 246, 117, .45)"
+  highlightRadius="0.5em"
+  client:visible
+/>
+```

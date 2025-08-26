@@ -6,7 +6,6 @@ description: 'A step-by-step guide to integrating a local audio player in the As
 # image: ''
 tags: [Astro]
 category:  'Tutorials'
-# series: 'Blog Tutorials'
 draft: false
 seriesCategory: "Tutorials"
 seriesCategoryDescription: "My Tutorials"

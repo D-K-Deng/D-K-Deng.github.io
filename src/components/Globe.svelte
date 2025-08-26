@@ -1,6 +1,7 @@
 <script>
-  import { onMount, onDestroy } from 'svelte';
   import { geoInterpolate } from 'd3-geo';
+  import { onDestroy, onMount } from 'svelte';
+
 
   let wrapper, container, globe, ro;
   let animationProgress = 0;
