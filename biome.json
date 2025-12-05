@@ -1,13 +1,12 @@
 {
-  "$schema": "https://biomejs.dev/schemas/1.8.3/schema.json",
+  "$schema": "https://biomejs.dev/schemas/latest/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
   "files": {
-    "ignore": [
-      "dist",
-      "node_modules",
-      "public",
-      "**/*.css", 
-      "**/*.scss"
-    ]
+    "ignoreUnknown": true
   },
   "linter": {
     "enabled": true,
