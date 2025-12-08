@@ -46,7 +46,7 @@
     "markdown-it": "^14.1.0",
     "mdast-util-to-string": "^4.0.0",
     "open-graph-scraper": "^6.9.0",
-    "overlayscrollbars": "^2.11.4",
+    "overlayscrollbars": "^2.13.0",
     "pagefind": "^1.3.0",
     "photoswipe": "^5.4.4",
     "punycode": "^2.3.1",
