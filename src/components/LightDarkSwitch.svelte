@@ -60,7 +60,12 @@
 </script>
 
 <!-- z-50 make the panel higher than other float panels -->
-<div class="relative z-50" role="menu" tabindex="-1" onmouseleave={hidePanel}>
+<div
+  class="light-dark-control relative z-50"
+  role="menu"
+  tabindex="-1"
+  onmouseleave={hidePanel}
+>
   <button
     aria-label="Light/Dark Mode"
     role="menuitem"

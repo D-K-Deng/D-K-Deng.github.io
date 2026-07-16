@@ -24,6 +24,7 @@ interface Props {
   series?: string;
   slug?: string;
   headings?: MarkdownHeading[];
+  immersive?: boolean;
 }
 
 const {
@@ -35,6 +36,7 @@ const {
   series,
   slug,
   headings = [],
+  immersive = false,
 } = Astro.props;
 const hasBannerCredit =
   siteConfig.banner.enable && siteConfig.banner.credit.enable;
@@ -69,7 +71,7 @@ const mainPanelTop = siteConfig.banner.enable
 
   <!-- Banner -->
   {
-    siteConfig.banner.enable && (
+    !immersive && siteConfig.banner.enable && (
       <div
         id="banner-wrapper"
         class={`absolute z-10 w-full transition duration-700 overflow-hidden`}
@@ -102,7 +104,7 @@ const mainPanelTop = siteConfig.banner.enable
       >
         <!-- Banner image credit -->
         {
-          hasBannerCredit && (
+          !immersive && hasBannerCredit && (
             <a
               href={siteConfig.banner.credit.url}
               id="banner-credit"
@@ -133,12 +135,16 @@ const mainPanelTop = siteConfig.banner.enable
           )
         }
 
-        <SideBar
-          class="mb-4 row-start-2 row-end-3 col-span-2 lg:row-start-1 lg:row-end-2 lg:col-span-1 lg:max-w-[17.5rem] onload-animation"
-          series={series}
-          slug={slug}
-          headings={headings}
-        />
+        {
+          !immersive && (
+            <SideBar
+              class="mb-4 row-start-2 row-end-3 col-span-2 lg:row-start-1 lg:row-end-2 lg:col-span-1 lg:max-w-[17.5rem] onload-animation"
+              series={series}
+              slug={slug}
+              headings={headings}
+            />
+          )
+        }
 
         <main
           id="swup-container"
@@ -148,18 +154,26 @@ const mainPanelTop = siteConfig.banner.enable
             <!-- the overflow-hidden here prevent long text break the layout-->
             <!-- make id different from windows.swup global property -->
             <slot />
-            <div class="footer col-span-2 onload-animation hidden lg:block">
-              <Footer />
-            </div>
+            {
+              !immersive && (
+                <div class="footer col-span-2 onload-animation hidden lg:block">
+                  <Footer />
+                </div>
+              )
+            }
           </div>
         </main>
 
-        <div class="footer col-span-2 onload-animation block lg:hidden">
-          <Footer />
-        </div>
+        {
+          !immersive && (
+            <div class="footer col-span-2 onload-animation block lg:hidden">
+              <Footer />
+            </div>
+          )
+        }
       </div>
 
-      <BackToTop />
+      {!immersive && <BackToTop />}
     </div>
   </div>
 
@@ -168,7 +182,7 @@ const mainPanelTop = siteConfig.banner.enable
     <div class="relative max-w-[var(--page-width)] mx-auto">
       <!-- TOC component -->
       {
-        siteConfig.toc.enable && (
+        !immersive && siteConfig.toc.enable && (
           <div
             id="toc-wrapper"
             class:list={[
@@ -191,7 +205,7 @@ const mainPanelTop = siteConfig.banner.enable
       }
 
       <!-- #toc needs to exist for Swup to work normally -->
-      {!siteConfig.toc.enable && <div id="toc" />}
+      {(immersive || !siteConfig.toc.enable) && <div id="toc" />}
     </div>
   </div>
 </Layout>

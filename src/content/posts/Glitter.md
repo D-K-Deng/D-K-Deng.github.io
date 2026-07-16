@@ -9,15 +9,13 @@ category: 'Publications'
 draft: false 
 seriesCategory: "Publications"
 seriesCategoryDescription: "My Publications"
-series: "Ongoing Research"
-seriesDescription: "Current research in progress"
+series: "Published Work"
+seriesDescription: "A collection of completed research publications"
 ---
 
-::github{repo="D-K-Deng/ASD-Virtual-Agent"}
+[Glitter: Exploring an LLM Virtual Agent for Supporting Practitioners in Behavioral Interventions of Autistic Children|Glitter is an LLM-powered virtual agent that integrates Applied Behavior Analysis guidance with self-directed learning and conversational support. A one-week field study with 11 practitioners examined how it supports real-time inquiry, strategy refinement, and lesson preparation in practice.|/image/ASDarc.png](https://www.tandfonline.com/doi/abs/10.1080/10447318.2026.2659953)
 
-:::note
-This paper is currently unpublished.
-:::
+::github{repo="D-K-Deng/ASD-Virtual-Agent"}
 
 As the prevalence of Autism Spectrum Disorder (ASD) continues to grow, practitioners and caregivers are constantly seeking innovative tools to enhance behavioral interventions. Enter Glitter, an LLM-powered virtual agent specifically designed to support Applied Behavior Analysis (ABA) interventions for autistic children. Built through an iterative design process with real-world input, Glitter represents a novel approach to digital behavioral health, providing a combination of self-directed learning and real-time conversational support.
 

@@ -4,6 +4,7 @@ import "@fontsource/roboto/500.css";
 import "@fontsource/roboto/700.css";
 
 import ConfigCarrier from "@components/ConfigCarrier.astro";
+import PageLoader from "@components/PageLoader.astro";
 import { profileConfig, siteConfig } from "@/config";
 import {
   AUTO_MODE,
@@ -159,6 +160,19 @@ const bannerOffset =
         `${offset}px`,
       );
     </script>
+    <script is:inline>
+      // Reveal the boot loader only when the initial load takes long enough to
+      // notice. Fast visits finish before the delayed CSS animation begins.
+      document.documentElement.classList.add("site-booting");
+      const finishInitialLoad = () => {
+        window.setTimeout(() => {
+          document.documentElement.classList.remove("site-booting");
+        }, 80);
+      };
+      if (document.readyState === "complete") finishInitialLoad();
+      else window.addEventListener("load", finishInitialLoad, { once: true });
+      window.setTimeout(finishInitialLoad, 12000);
+    </script>
     <style
       define:vars={{
         configHue,
@@ -181,6 +195,7 @@ const bannerOffset =
     class:list={[{ "lg:is-home": isHomePage, "enable-banner": enableBanner }]}
     data-overlayscrollbars-initialize
   >
+    <PageLoader />
     <ConfigCarrier />
     <slot />
 
@@ -296,6 +311,105 @@ function disableAnimation() {
 */
 
   const bannerEnabled = !!document.getElementById("banner-wrapper");
+  let pageLoaderShowTimer: number | null = null;
+  let pageLoaderHideTimer: number | null = null;
+  let pageLoaderSafetyTimer: number | null = null;
+  let pageLoaderShownAt = 0;
+  let aboutRendererWarmup: Promise<unknown> | null = null;
+
+  function getPageLoader() {
+    return document.getElementById("page-loader");
+  }
+
+  function clearPageLoaderTimers() {
+    if (pageLoaderShowTimer !== null) window.clearTimeout(pageLoaderShowTimer);
+    if (pageLoaderHideTimer !== null) window.clearTimeout(pageLoaderHideTimer);
+    if (pageLoaderSafetyTimer !== null) window.clearTimeout(pageLoaderSafetyTimer);
+    pageLoaderShowTimer = null;
+    pageLoaderHideTimer = null;
+    pageLoaderSafetyTimer = null;
+  }
+
+  function showPageLoader(targetUrl: string) {
+    clearPageLoaderTimers();
+    document.documentElement.classList.remove("site-booting");
+    const loader = getPageLoader();
+    if (!loader) return;
+
+    const targetPath = new URL(targetUrl, window.location.href).pathname;
+    const heading = loader.querySelector("#page-loader-message");
+    if (heading) {
+      heading.textContent = pathsEqual(targetPath, url("/about/"))
+        ? "Composing the About experience"
+        : "Preparing the next page";
+    }
+
+    // Do not flash the overlay for transitions that finish almost instantly.
+    pageLoaderShowTimer = window.setTimeout(() => {
+      pageLoaderShowTimer = null;
+      pageLoaderShownAt = performance.now();
+      loader.setAttribute("aria-hidden", "false");
+      document.documentElement.classList.add("site-loader-visible");
+      pageLoaderSafetyTimer = window.setTimeout(() => hidePageLoader(true), 12000);
+    }, 140);
+  }
+
+  function hidePageLoader(immediate = false) {
+    if (pageLoaderShowTimer !== null) {
+      window.clearTimeout(pageLoaderShowTimer);
+      pageLoaderShowTimer = null;
+    }
+    if (pageLoaderSafetyTimer !== null) {
+      window.clearTimeout(pageLoaderSafetyTimer);
+      pageLoaderSafetyTimer = null;
+    }
+
+    const loader = getPageLoader();
+    const finish = () => {
+      document.documentElement.classList.remove("site-loader-visible");
+      loader?.setAttribute("aria-hidden", "true");
+      pageLoaderHideTimer = null;
+    };
+    if (!document.documentElement.classList.contains("site-loader-visible")) {
+      finish();
+      return;
+    }
+
+    const elapsed = performance.now() - pageLoaderShownAt;
+    const delay = immediate ? 0 : Math.max(0, 360 - elapsed);
+    pageLoaderHideTimer = window.setTimeout(finish, delay);
+  }
+
+  function warmAboutRenderer() {
+    const connection = (
+      navigator as Navigator & {
+        connection?: { saveData?: boolean; effectiveType?: string };
+      }
+    ).connection;
+    if (
+      connection?.saveData ||
+      connection?.effectiveType?.includes("2g") ||
+      window.matchMedia("(prefers-reduced-data: reduce)").matches
+    ) {
+      return;
+    }
+    // Warm the exact component chunk on intent so the navigation can reuse the
+    // browser cache without pulling the complete, non-tree-shaken Three.js API.
+    aboutRendererWarmup ??= import("../components/AboutExperience.svelte").catch(
+      () => null,
+    );
+  }
+
+  document.querySelectorAll<HTMLAnchorElement>("a[href]").forEach((link) => {
+    if (!pathsEqual(new URL(link.href, window.location.href).pathname, url("/about/"))) {
+      return;
+    }
+    link.addEventListener("pointerenter", warmAboutRenderer, { once: true });
+    link.addEventListener("focus", warmAboutRenderer, { once: true });
+    link.addEventListener("pointerdown", warmAboutRenderer, { once: true });
+  });
+
+  window.addEventListener("pageshow", () => hidePageLoader(true));
 
   function setClickOutsideToClose(panel: string, ignores: string[]) {
     document.addEventListener("click", (event) => {
@@ -408,6 +522,7 @@ function disableAnimation() {
 
     const banner = document.getElementById("banner");
     if (!banner) {
+      if (document.documentElement.classList.contains("about-page-active")) return;
       console.error("Banner element not found");
       return;
     }
@@ -415,8 +530,17 @@ function disableAnimation() {
     banner.classList.remove("opacity-0", "scale-105");
   }
 
+  function syncAboutPageState(targetUrl: string) {
+    const targetPath = new URL(targetUrl, window.location.href).pathname;
+    document.documentElement.classList.toggle(
+      "about-page-active",
+      pathsEqual(targetPath, url("/about/")),
+    );
+  }
+
   function init() {
     // disableAnimation()()		// TODO
+    syncAboutPageState(window.location.href);
     loadTheme();
     loadHue();
     initCustomScrollbar();
@@ -461,6 +585,11 @@ function disableAnimation() {
     });
     window.swup.hooks.on("content:replace", initCustomScrollbar);
     window.swup.hooks.on("visit:start", (visit: { to: { url: string } }) => {
+      // The navbar lives outside Swup's replacement container, so its About-only
+      // appearance must follow the destination instead of the outgoing component.
+      syncAboutPageState(visit.to.url);
+      showPageLoader(visit.to.url);
+
       // change banner height immediately when a link is clicked
       const bodyElement = document.querySelector("body");
       if (pathsEqual(visit.to.url, url("/"))) {
@@ -482,6 +611,8 @@ function disableAnimation() {
       }
     });
     window.swup.hooks.on("page:view", () => {
+      syncAboutPageState(window.location.href);
+
       // hide the temp high element when the transition is done
       const heightExtend = document.getElementById("page-height-extend");
       if (heightExtend) {
@@ -489,6 +620,7 @@ function disableAnimation() {
       }
     });
     window.swup.hooks.on("visit:end", (_visit: { to: { url: string } }) => {
+      hidePageLoader();
       setTimeout(() => {
         const heightExtend = document.getElementById("page-height-extend");
         if (heightExtend) {
