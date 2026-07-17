@@ -49,6 +49,13 @@ const config = profileConfig;
     const MIN_RESOLUTION = 12;
     const AUTO_COMPLETE_RATIO = 0.7;
     const BLUR_FACTOR = 10;
+    type ProfileEffectWindow = Window & typeof globalThis & {
+        __profileAvatarRevealed?: boolean;
+        __profileAvatarEffectCleanup?: () => void;
+        __profileAvatarSwupHookBound?: boolean;
+        __profileAvatarLifecycleBound?: boolean;
+    };
+    const profileEffectWindow = window as ProfileEffectWindow;
 
     class Particle {
         x: number;
@@ -156,18 +163,42 @@ const config = profileConfig;
 
         if (!canvas || !img || !linkArea || !mask) return;
 
-        const ctx = (canvas as HTMLCanvasElement).getContext('2d');
+        const cvs = canvas as HTMLCanvasElement;
+        if (cvs.dataset.splitEffectInitialized === 'true') return;
+        cvs.dataset.splitEffectInitialized = 'true';
+
+        profileEffectWindow.__profileAvatarEffectCleanup?.();
+
+        const revealPhoto = () => {
+            cvs.style.opacity = '0';
+            cvs.style.pointerEvents = 'none';
+            imgContainer.classList.remove('opacity-0');
+            mask.classList.remove('opacity-0', 'pointer-events-none');
+        };
+
+        if (profileEffectWindow.__profileAvatarRevealed) {
+            revealPhoto();
+            return;
+        }
+
+        const ctx = cvs.getContext('2d');
         if (!ctx) return;
 
         let rootParticle: Particle | null = null;
-        let animationFrameId: number;
+        let animationFrameId = 0;
+        let resizeTimer = 0;
         let drawParams = { scale: 1, x: 0, y: 0 };
         let totalArea = 0;
         let isComplete = false;
 
         const start = () => {
+            if (profileEffectWindow.__profileAvatarRevealed) {
+                isComplete = true;
+                revealPhoto();
+                return;
+            }
+
             const rect = linkArea.getBoundingClientRect();
-            const cvs = canvas as HTMLCanvasElement;
             cvs.width = Math.floor(rect.width);
             cvs.height = Math.floor(rect.height);
             totalArea = cvs.width * cvs.height;
@@ -205,21 +236,15 @@ const config = profileConfig;
 
         const finishEffect = () => {
             isComplete = true;
+            profileEffectWindow.__profileAvatarRevealed = true;
             cancelAnimationFrame(animationFrameId);
-
-            const cvs = canvas as HTMLCanvasElement;
-            cvs.style.opacity = '0';
-            cvs.style.pointerEvents = 'none';
-
-            imgContainer.classList.remove('opacity-0');
-            mask.classList.remove('opacity-0', 'pointer-events-none');
+            revealPhoto();
         };
 
-        linkArea.addEventListener('mousemove', (e) => {
+        const handleMouseMove = (e: Event) => {
             if (isComplete) return;
 
             const event = e as MouseEvent;
-            const cvs = canvas as HTMLCanvasElement;
             const rect = cvs.getBoundingClientRect();
             const mouseX = event.clientX - rect.left;
             const mouseY = event.clientY - rect.top;
@@ -227,20 +252,53 @@ const config = profileConfig;
             if (rootParticle) {
                 rootParticle.checkMouse(mouseX, mouseY);
             }
-        });
+        };
+
+        const handleResize = () => {
+            window.clearTimeout(resizeTimer);
+            if (profileEffectWindow.__profileAvatarRevealed) {
+                isComplete = true;
+                revealPhoto();
+                return;
+            }
+            cancelAnimationFrame(animationFrameId);
+            resizeTimer = window.setTimeout(start, 200);
+        };
+
+        linkArea.addEventListener('mousemove', handleMouseMove);
 
         if (img.complete) {
             start();
         } else {
             img.onload = start;
         }
-        
-        window.addEventListener('resize', () => {
-             cancelAnimationFrame(animationFrameId);
-             setTimeout(start, 200);
-        });
+
+        window.addEventListener('resize', handleResize);
+        profileEffectWindow.__profileAvatarEffectCleanup = () => {
+            cancelAnimationFrame(animationFrameId);
+            window.clearTimeout(resizeTimer);
+            linkArea.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('resize', handleResize);
+            if (img.onload === start) img.onload = null;
+        };
     }
 
-    document.addEventListener('astro:page-load', initSplitEffect);
+    function bindProfileEffectToSwup() {
+        if (profileEffectWindow.__profileAvatarSwupHookBound || !window.swup?.hooks) {
+            return;
+        }
+        profileEffectWindow.__profileAvatarSwupHookBound = true;
+        window.swup.hooks.on('page:view', initSplitEffect);
+    }
+
+    if (!profileEffectWindow.__profileAvatarLifecycleBound) {
+        profileEffectWindow.__profileAvatarLifecycleBound = true;
+        document.addEventListener('astro:page-load', initSplitEffect);
+        if (window.swup?.hooks) {
+            bindProfileEffectToSwup();
+        } else {
+            document.addEventListener('swup:enable', bindProfileEffectToSwup, { once: true });
+        }
+    }
     initSplitEffect();
 </script>

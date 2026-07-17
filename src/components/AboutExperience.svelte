@@ -1,6 +1,11 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import * as THREE from "three";
+  import {
+    chinaAndTaiwanOutlineData,
+    unitedStatesOutlineData,
+    worldCoastlineData,
+  } from "../data/about-world-map";
 
   type SceneGroup = THREE.Group & {
     userData: { fade?: number; lastFade?: number; [key: string]: unknown };
@@ -18,6 +23,19 @@
     labelOffset: [number, number, number];
   };
 
+  type GeoPoint = readonly [lat: number, lng: number];
+
+  type GeoOutline = {
+    name: string;
+    points: readonly GeoPoint[];
+    closed?: boolean;
+  };
+
+  type JourneyRouteCurve = {
+    getPoint: (progress: number) => THREE.Vector3;
+    getPoints: (divisions?: number) => THREE.Vector3[];
+  };
+
   type ResearchProject = {
     id: string;
     label: string;
@@ -30,9 +48,15 @@
     colors: [string, string];
   };
 
+  type DetailChapter = 2 | 3 | 4 | 5;
+
   type DetailSelection =
-    | { kind: "place"; item: RouteLocation }
-    | { kind: "project"; item: ResearchProject };
+    | { kind: "place"; item: RouteLocation; chapter: 2 }
+    | {
+        kind: "project";
+        item: ResearchProject;
+        chapter: Exclude<DetailChapter, 2>;
+      };
 
   type PaletteStop = {
     at: number;
@@ -123,6 +147,35 @@
       labelOffset: [-0.08, 0.54, 0],
     },
   ];
+
+  const routeBrandColors = routeLocations.map(
+    (location) =>
+      [
+        new THREE.Color(location.colors[0]),
+        new THREE.Color(location.colors[1]),
+      ] as const,
+  );
+
+  const worldLandOutlines = decodeGeoOutlineData(
+    "world-coastline",
+    worldCoastlineData,
+  );
+  const chinaLandOutlines = decodeGeoOutlineData(
+    "china-taiwan",
+    chinaAndTaiwanOutlineData,
+  );
+  const unitedStatesOutlines = decodeGeoOutlineData(
+    "united-states",
+    unitedStatesOutlineData,
+  );
+
+  const diaoyuIsletPoints: readonly GeoPoint[] = [
+    [25.75, 123.47],
+    [25.92, 123.68],
+    [25.92, 124.56],
+  ];
+
+  const journeyRouteHeights = [0.14, 0.3, 0.28, 0.32] as const;
 
   const humanAiProjects: ResearchProject[] = [
     {
@@ -250,6 +303,9 @@
   const lightSceneGlow = new THREE.Color();
   const blendedSceneColor = new THREE.Color();
   const blendedSceneGlow = new THREE.Color();
+  const travelerBrandA = new THREE.Color();
+  const travelerBrandB = new THREE.Color();
+  const travelerVertexColor = new THREE.Color();
   const themedMaterials: ThemeMaterialBinding[] = [];
 
   let experience: HTMLElement;
@@ -271,6 +327,7 @@
   let playCountStarted = false;
   let selectedDetail: DetailSelection | null = null;
   let detailPanel: HTMLElement | undefined;
+  let detailReturnFocus: HTMLElement | null = null;
 
   const clamp = (value: number, min = 0, max = 1) =>
     Math.min(max, Math.max(min, value));
@@ -292,6 +349,16 @@
       ? 1.08
       : (center + chapterStops[index + 1]) / 2;
     return { center, entry, exit };
+  }
+
+  function chapterIndexAt(value: number) {
+    return chapterStops.reduce(
+      (closest, stop, index) =>
+        Math.abs(stop - value) < Math.abs(chapterStops[closest] - value)
+          ? index
+          : closest,
+      0,
+    );
   }
 
   function chapterAlpha(value: number, index: number) {
@@ -386,21 +453,37 @@
     });
   }
 
-  async function openPlaceDetail(index: number) {
-    selectedDetail = { kind: "place", item: routeLocations[index] };
+  async function openPlaceDetail(index: number, trigger: HTMLElement) {
+    detailReturnFocus = trigger;
+    selectedDetail = {
+      kind: "place",
+      item: routeLocations[index],
+      chapter: 2,
+    };
     scrollToJourneyLocation(index);
     await tick();
     detailPanel?.focus();
   }
 
-  async function openProjectDetail(project: ResearchProject) {
-    selectedDetail = { kind: "project", item: project };
+  async function openProjectDetail(
+    project: ResearchProject,
+    chapter: Exclude<DetailChapter, 2>,
+    trigger: HTMLElement,
+  ) {
+    detailReturnFocus = trigger;
+    selectedDetail = { kind: "project", item: project, chapter };
     await tick();
     detailPanel?.focus();
   }
 
-  function closeDetail() {
+  async function closeDetail(restoreFocus = true) {
+    const returnFocus = detailReturnFocus;
     selectedDetail = null;
+    detailReturnFocus = null;
+    if (restoreFocus && returnFocus?.isConnected) {
+      await tick();
+      returnFocus.focus({ preventScroll: true });
+    }
   }
 
   function markMaterial(
@@ -491,6 +574,10 @@
         ? mesh.material
         : [mesh.material];
       for (const material of materials) {
+        if (material.userData.skipGroupFade) {
+          child.visible = opacity > 0.08;
+          continue;
+        }
         const baseOpacity = material.userData.baseOpacity ?? material.opacity ?? 1;
         material.userData.baseOpacity = baseOpacity;
         material.transparent = true;
@@ -899,6 +986,180 @@
     );
   }
 
+  function decodeGeoOutlineData(
+    namePrefix: string,
+    data: readonly number[][],
+  ): GeoOutline[] {
+    return data.flatMap((encoded, outlineIndex) => {
+      if (encoded.length < 5) return [];
+      let lng = encoded[1];
+      let lat = encoded[2];
+      const points: GeoPoint[] = [[lat / 100, lng / 100]];
+
+      for (let index = 3; index + 1 < encoded.length; index += 2) {
+        lng += encoded[index];
+        lat += encoded[index + 1];
+        points.push([lat / 100, lng / 100]);
+      }
+
+      return [{
+        name: `${namePrefix}-${outlineIndex}`,
+        points,
+        closed: encoded[0] === 1,
+      }];
+    });
+  }
+
+  function makeGeoOutlineBatch(
+    name: string,
+    outlines: readonly GeoOutline[],
+    radius: number,
+    material: THREE.LineBasicMaterial,
+    maxStepDegrees = 4,
+  ) {
+    const positions: number[] = [];
+
+    for (const outline of outlines) {
+      if (outline.points.length < 2) continue;
+      const closed = outline.closed ?? true;
+      const segmentCount = closed
+        ? outline.points.length
+        : outline.points.length - 1;
+
+      for (let index = 0; index < segmentCount; index += 1) {
+        const startPoint = outline.points[index];
+        const endPoint = outline.points[(index + 1) % outline.points.length];
+        const start = latLngToVector(startPoint[0], startPoint[1], radius);
+        const end = latLngToVector(endPoint[0], endPoint[1], radius);
+        const angleDegrees = THREE.MathUtils.radToDeg(start.angleTo(end));
+        const steps = Math.max(1, Math.ceil(angleDegrees / maxStepDegrees));
+        let previous = start;
+
+        for (let step = 1; step <= steps; step += 1) {
+          const next = start
+            .clone()
+            .lerp(end, step / steps)
+            .normalize()
+            .multiplyScalar(radius);
+          positions.push(
+            previous.x,
+            previous.y,
+            previous.z,
+            next.x,
+            next.y,
+            next.z,
+          );
+          previous = next;
+        }
+      }
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(positions, 3),
+    );
+    const lines = new THREE.LineSegments(geometry, material);
+    lines.name = name;
+    lines.renderOrder = 1;
+    return lines;
+  }
+
+  function makeJourneyRouteCurve(
+    routeIndex: number,
+    startLocation: RouteLocation,
+    endLocation: RouteLocation,
+  ): JourneyRouteCurve {
+    const longitudeDelta =
+      THREE.MathUtils.euclideanModulo(
+        endLocation.lng - startLocation.lng + 180,
+        360,
+      ) - 180;
+    const routeHeight = journeyRouteHeights[routeIndex] ?? 0.3;
+
+    const getPoint = (progress: number) => {
+      const t = clamp(progress);
+      const eased = t * t * (3 - 2 * t);
+      const latitude = mix(startLocation.lat, endLocation.lat, eased);
+      const longitude =
+        startLocation.lng + longitudeDelta * eased;
+      const altitudeWave = Math.sin(Math.PI * eased);
+      const altitude =
+        altitudeWave * altitudeWave * routeHeight;
+      return latLngToVector(
+        latitude,
+        longitude,
+        2.27 + altitude,
+      );
+    };
+
+    return {
+      getPoint,
+      getPoints: (divisions = 5) =>
+        Array.from(
+          { length: Math.max(1, divisions) + 1 },
+          (_, index) => getPoint(index / Math.max(1, divisions)),
+        ),
+    };
+  }
+
+  function makeTravelerGeometry() {
+    const geometry = new THREE.SphereGeometry(0.09, 20, 16);
+    const positions = geometry.getAttribute("position");
+    const colors = new Float32Array(positions.count * 3);
+    const gradientWeights = new Float32Array(positions.count);
+
+    for (let index = 0; index < positions.count; index += 1) {
+      const horizontal = positions.getX(index) / 0.09;
+      const vertical = positions.getY(index) / 0.09;
+      gradientWeights[index] = smoothstep(
+        0,
+        1,
+        0.5 + horizontal * 0.34 + vertical * 0.16,
+      );
+    }
+
+    geometry.setAttribute(
+      "color",
+      new THREE.BufferAttribute(colors, 3),
+    );
+    geometry.userData.gradientWeights = gradientWeights;
+    return geometry;
+  }
+
+  function updateTravelerGradient(
+    traveler: THREE.Mesh,
+    colorA: THREE.Color,
+    colorB: THREE.Color,
+  ) {
+    const colorAttribute = traveler.geometry.getAttribute(
+      "color",
+    ) as THREE.BufferAttribute;
+    const gradientWeights = traveler.geometry.userData
+      .gradientWeights as Float32Array;
+
+    for (let index = 0; index < colorAttribute.count; index += 1) {
+      travelerVertexColor
+        .copy(colorA)
+        .lerp(colorB, gradientWeights[index]);
+      colorAttribute.setXYZ(
+        index,
+        travelerVertexColor.r,
+        travelerVertexColor.g,
+        travelerVertexColor.b,
+      );
+    }
+    colorAttribute.needsUpdate = true;
+
+    const travelerGlow = traveler.getObjectByName(
+      "journey-traveler-glow",
+    ) as THREE.Sprite | null;
+    const glowMaterial = travelerGlow?.material as
+      | THREE.SpriteMaterial
+      | undefined;
+    glowMaterial?.color.copy(colorA).lerp(colorB, 0.5);
+  }
+
   function paintJourneyLabel(
     labelCanvas: HTMLCanvasElement,
     context: CanvasRenderingContext2D,
@@ -1038,15 +1299,30 @@
     assembly.name = "journey-assembly";
     group.add(assembly);
 
+    const globeDepthMaterial = new THREE.MeshBasicMaterial({
+      colorWrite: false,
+      depthTest: true,
+      depthWrite: true,
+      side: THREE.FrontSide,
+    });
+    globeDepthMaterial.userData.skipGroupFade = true;
+    const globeDepth = new THREE.Mesh(
+      new THREE.SphereGeometry(2.242, 36, 24),
+      globeDepthMaterial,
+    );
+    globeDepth.name = "journey-globe-depth";
+    globeDepth.renderOrder = -10;
+    assembly.add(globeDepth);
+
     const globeMaterial = registerThemeMaterial(
       markMaterial(
         new THREE.MeshBasicMaterial({
           color: 0x8fb5ff,
           wireframe: true,
           transparent: true,
-          opacity: 0.14,
+          opacity: 0.1,
         }),
-        0.14,
+        0.1,
         false,
       ),
       { darkColor: "#8fb5ff", lightColor: "#4465b4" },
@@ -1057,6 +1333,110 @@
     );
     globe.name = "journey-globe";
     assembly.add(globe);
+
+    const continentMaterial = registerThemeMaterial(
+      markMaterial(
+        new THREE.LineBasicMaterial({
+          color: 0x7895d2,
+          transparent: true,
+          opacity: 0.28,
+          depthTest: true,
+          depthWrite: false,
+        }),
+        0.28,
+        false,
+      ),
+      { darkColor: "#c5d2e8", lightColor: "#4f6489" },
+    );
+    const chinaOutlineMaterial = registerThemeMaterial(
+      markMaterial(
+        new THREE.LineBasicMaterial({
+          color: 0xf0b0aa,
+          transparent: true,
+          opacity: 0.62,
+          depthTest: true,
+          depthWrite: false,
+        }),
+        0.62,
+        false,
+      ),
+      { darkColor: "#f0b0aa", lightColor: "#9f3f4a" },
+    );
+    const unitedStatesOutlineMaterial = registerThemeMaterial(
+      markMaterial(
+        new THREE.LineBasicMaterial({
+          color: 0xa9c7ff,
+          transparent: true,
+          opacity: 0.58,
+          depthTest: true,
+          depthWrite: false,
+        }),
+        0.58,
+        false,
+      ),
+      { darkColor: "#a9c7ff", lightColor: "#315d9e" },
+    );
+    const landGroup = new THREE.Group();
+    landGroup.name = "journey-land-outlines";
+    landGroup.add(
+      makeGeoOutlineBatch(
+        "journey-world-land",
+        worldLandOutlines,
+        2.267,
+        continentMaterial,
+        4.5,
+      ),
+      makeGeoOutlineBatch(
+        "journey-china-outline",
+        chinaLandOutlines,
+        2.286,
+        chinaOutlineMaterial,
+        2.2,
+      ),
+      makeGeoOutlineBatch(
+        "journey-united-states-outline",
+        unitedStatesOutlines,
+        2.284,
+        unitedStatesOutlineMaterial,
+        2.5,
+      ),
+    );
+
+    const diaoyuMaterial = registerThemeMaterial(
+      markMaterial(
+        new THREE.PointsMaterial({
+          color: 0xd8e4ff,
+          map: glowTexture ?? undefined,
+          alphaTest: glowTexture ? 0.04 : 0,
+          size: 0.095,
+          sizeAttenuation: true,
+          transparent: true,
+          opacity: 0.84,
+          depthTest: true,
+          depthWrite: false,
+        }),
+        0.84,
+        false,
+      ),
+      { darkColor: "#d8e4ff", lightColor: "#274d88" },
+    );
+    const diaoyuIslets = new THREE.Points(
+      new THREE.BufferGeometry().setFromPoints(
+        diaoyuIsletPoints.map(([lat, lng]) =>
+          latLngToVector(lat, lng, 2.302),
+        ),
+      ),
+      diaoyuMaterial,
+    );
+    diaoyuIslets.name = "journey-diaoyu-islets";
+    diaoyuIslets.renderOrder = 2;
+    landGroup.add(diaoyuIslets);
+    assembly.add(landGroup);
+
+    assembly.userData.chinaOutlineMaterial = chinaOutlineMaterial;
+    assembly.userData.unitedStatesOutlineMaterial =
+      unitedStatesOutlineMaterial;
+    assembly.userData.diaoyuMaterial = diaoyuMaterial;
 
     const routeMaterial = registerThemeMaterial(
       markMaterial(
@@ -1074,7 +1454,7 @@
     const vectors = routeLocations.map((location) =>
       latLngToVector(location.lat, location.lng, 2.27),
     );
-    const curves: THREE.QuadraticBezierCurve3[] = [];
+    const curves: JourneyRouteCurve[] = [];
     const trailPoints: THREE.Vector3[] = [];
     vectors.forEach((vector, index) => {
       const location = routeLocations[index];
@@ -1093,6 +1473,7 @@
       );
       point.position.copy(vector);
       point.name = `journey-point-${index}`;
+      point.renderOrder = 3;
       assembly.add(point);
 
       const ring = new THREE.Mesh(
@@ -1114,6 +1495,7 @@
         vector.clone().normalize(),
       );
       ring.name = `journey-ring-${index}`;
+      ring.renderOrder = 3;
       assembly.add(ring);
 
       const label = makeJourneyLabel(
@@ -1127,27 +1509,25 @@
           .copy(vector.clone().multiplyScalar(1.11))
           .add(labelOffset);
         label.name = `journey-label-${index}`;
+        label.renderOrder = 4;
         assembly.add(label);
       }
 
       if (index < vectors.length - 1) {
-        const start = vector;
-        const end = vectors[index + 1];
-        const midpoint = start
-          .clone()
-          .add(end)
-          .multiplyScalar(0.5)
-          .normalize()
-          .multiplyScalar(2.7 + index * 0.12);
-        const curve = new THREE.QuadraticBezierCurve3(start, midpoint, end);
+        const curve = makeJourneyRouteCurve(
+          index,
+          location,
+          routeLocations[index + 1],
+        );
         curves.push(curve);
-        const curvePoints = curve.getPoints(64);
+        const curvePoints = curve.getPoints(index === 0 ? 48 : 96);
         trailPoints.push(...(index === 0 ? curvePoints : curvePoints.slice(1)));
         const route = new THREE.Line(
           new THREE.BufferGeometry().setFromPoints(curvePoints),
           routeMaterial,
         );
         route.name = `journey-route-${index}`;
+        route.renderOrder = 2;
         route.userData.curve = curve;
         assembly.add(route);
       }
@@ -1171,44 +1551,50 @@
       ),
     );
     trail.name = "journey-trail";
+    trail.renderOrder = 3;
     trail.userData.totalPoints = trailPoints.length;
     assembly.add(trail);
 
     const traveler = new THREE.Mesh(
-      new THREE.SphereGeometry(0.09, 20, 16),
-      registerThemeMaterial(
-        markMaterial(
-          new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true }),
-          1,
-          false,
-        ),
-        { darkColor: "#ffffff", lightColor: "#213c82" },
+      makeTravelerGeometry(),
+      markMaterial(
+        new THREE.MeshBasicMaterial({
+          color: 0xffffff,
+          vertexColors: true,
+          transparent: true,
+        }),
+        1,
+        false,
       ),
     );
     traveler.position.copy(vectors[0]);
     traveler.name = "journey-traveler";
+    traveler.renderOrder = 4;
     if (glowTexture) {
       const travelerGlow = new THREE.Sprite(
-          registerThemeMaterial(
-            markMaterial(
-              new THREE.SpriteMaterial({
-                map: glowTexture,
-                color: 0x8fb1ff,
-                transparent: true,
-                opacity: 0.8,
-                blending: THREE.AdditiveBlending,
-                depthTest: false,
-                depthWrite: false,
-              }),
-              0.8,
-              false,
-            ),
-            { darkColor: "#8fb1ff", lightColor: "#355bb1" },
-          ),
+        markMaterial(
+          new THREE.SpriteMaterial({
+            map: glowTexture,
+            color: routeLocations[0].colors[0],
+            transparent: true,
+            opacity: 0.8,
+            blending: THREE.AdditiveBlending,
+            depthTest: false,
+            depthWrite: false,
+          }),
+          0.8,
+          false,
+        ),
       );
+      travelerGlow.name = "journey-traveler-glow";
       travelerGlow.scale.setScalar(0.72);
       traveler.add(travelerGlow);
     }
+    updateTravelerGradient(
+      traveler,
+      routeBrandColors[0][0],
+      routeBrandColors[0][1],
+    );
     assembly.add(traveler);
 
     assembly.userData.vectors = vectors;
@@ -1688,6 +2074,13 @@
     const darkAmbientColor = new THREE.Color(0x91a7d6);
     const lightGroundColor = new THREE.Color(0xe7d9d4);
     const darkGroundColor = new THREE.Color(0x151824);
+    const journeySpinAxis = new THREE.Vector3(0, 1, 0);
+    const journeyTiltQuaternion = new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(0, 0, 1),
+      THREE.MathUtils.degToRad(-8),
+    );
+    const journeyYawQuaternion = new THREE.Quaternion();
+    const journeyTargetQuaternion = new THREE.Quaternion();
 
     const syncTheme = (immediate = false) => {
       const nextIsDark = document.documentElement.classList.contains("dark");
@@ -1759,6 +2152,12 @@
       const rect = experience.getBoundingClientRect();
       const scrollable = Math.max(1, rect.height - window.innerHeight);
       targetProgress = clamp(-rect.top / scrollable);
+      if (
+        selectedDetail &&
+        chapterIndexAt(targetProgress) !== selectedDetail.chapter
+      ) {
+        closeDetail(false);
+      }
     };
 
     const updatePointer = (event: PointerEvent) => {
@@ -1913,13 +2312,7 @@
       blendedSceneGlow.copy(lightSceneGlow).lerp(darkSceneGlow, themeMix);
       background = `#${blendedSceneColor.getHexString()}`;
       glow = `#${blendedSceneGlow.getHexString()}`;
-      activeChapter = chapterStops.reduce(
-        (closest, stop, index) =>
-          Math.abs(stop - progress) < Math.abs(chapterStops[closest] - progress)
-            ? index
-            : closest,
-        0,
-      );
+      activeChapter = chapterIndexAt(progress);
 
       if (!playCountStarted && progress >= chapterBounds(6).entry) {
         playCountStarted = true;
@@ -2022,7 +2415,7 @@
       const journeyProgress = journeyTravelProgress(progress);
       const journeyAssembly = journey.getObjectByName("journey-assembly") as THREE.Group | null;
       if (journeyAssembly) {
-        const curves = journeyAssembly.userData.curves as THREE.QuadraticBezierCurve3[];
+        const curves = journeyAssembly.userData.curves as JourneyRouteCurve[];
         const scaledJourney = journeyProgress * curves.length;
         const segmentIndex = Math.min(
           curves.length - 1,
@@ -2034,8 +2427,38 @@
         const travelerPosition = curves[segmentIndex].getPoint(
           clamp(segmentProgress),
         );
-        const traveler = journeyAssembly.getObjectByName("journey-traveler");
-        traveler?.position.copy(travelerPosition);
+        const traveler = journeyAssembly.getObjectByName(
+          "journey-traveler",
+        ) as THREE.Mesh | null;
+        if (traveler) {
+          traveler.position.copy(travelerPosition);
+          const destinationIndex = Math.min(
+            routeLocations.length - 1,
+            segmentIndex + 1,
+          );
+          const brandTransition = smoothstep(
+            0.08,
+            0.92,
+            clamp(segmentProgress),
+          );
+          travelerBrandA
+            .copy(routeBrandColors[segmentIndex][0])
+            .lerp(
+              routeBrandColors[destinationIndex][0],
+              brandTransition,
+            );
+          travelerBrandB
+            .copy(routeBrandColors[segmentIndex][1])
+            .lerp(
+              routeBrandColors[destinationIndex][1],
+              brandTransition,
+            );
+          updateTravelerGradient(
+            traveler,
+            travelerBrandA,
+            travelerBrandB,
+          );
+        }
 
         const trail = journeyAssembly.getObjectByName("journey-trail") as THREE.Line | null;
         if (trail) {
@@ -2050,15 +2473,56 @@
           routeLocations.length - 1,
           Math.round(journeyProgress * (routeLocations.length - 1)),
         );
-        const focusDirection = travelerPosition.clone().normalize();
-        const frontDirection = new THREE.Vector3(0, 0, 1);
-        const focusQuaternion = new THREE.Quaternion().setFromUnitVectors(
-          focusDirection,
-          frontDirection,
+        const targetYaw = Math.atan2(
+          -travelerPosition.x,
+          travelerPosition.z,
         );
-        journeyAssembly.quaternion.slerp(focusQuaternion, 0.075);
+        journeyYawQuaternion.setFromAxisAngle(
+          journeySpinAxis,
+          targetYaw,
+        );
+        journeyTargetQuaternion
+          .copy(journeyTiltQuaternion)
+          .multiply(journeyYawQuaternion);
+        const journeyRotationEase = reducedMotion
+          ? 1
+          : 1 - Math.exp(-delta * 4.7);
+        journeyAssembly.quaternion.slerp(
+          journeyTargetQuaternion,
+          journeyRotationEase,
+        );
 
         const journeyFade = journey.userData.fade ?? 0;
+        const chinaIsActive =
+          journeyLocationIndex === 0 ||
+          journeyLocationIndex === 1 ||
+          journeyLocationIndex === 3;
+        const unitedStatesIsActive =
+          journeyLocationIndex === 2 || journeyLocationIndex === 4;
+        const outlinePulse = Math.sin(seconds * 2.1) * 0.035;
+        const chinaOutlineMaterial = journeyAssembly.userData
+          .chinaOutlineMaterial as THREE.LineBasicMaterial | undefined;
+        const unitedStatesOutlineMaterial = journeyAssembly.userData
+          .unitedStatesOutlineMaterial as THREE.LineBasicMaterial | undefined;
+        const diaoyuMaterial = journeyAssembly.userData
+          .diaoyuMaterial as THREE.PointsMaterial | undefined;
+        if (chinaOutlineMaterial) {
+          chinaOutlineMaterial.opacity =
+            journeyFade *
+            (chinaIsActive ? 0.63 + outlinePulse : 0.22);
+        }
+        if (unitedStatesOutlineMaterial) {
+          unitedStatesOutlineMaterial.opacity =
+            journeyFade *
+            (unitedStatesIsActive ? 0.59 + outlinePulse : 0.2);
+        }
+        if (diaoyuMaterial) {
+          diaoyuMaterial.opacity =
+            journeyFade *
+            (chinaIsActive
+              ? 0.82 + Math.sin(seconds * 2.8) * 0.1
+              : 0.34);
+        }
         routeLocations.forEach((location, index) => {
           const isCurrent = index === journeyLocationIndex;
           const isVisited = index < journeyLocationIndex;
@@ -2253,16 +2717,35 @@
       aria-live="polite"
       aria-hidden={sceneReady}
     >
-      <div class="experience-loader__mark" aria-hidden="true">
-        <span></span>
-        <span></span>
-        <i></i>
+      <div class="experience-loader__content">
+        <div class="experience-loader__scene" aria-hidden="true">
+          <div class="experience-loader__mark">
+            <span></span>
+            <span></span>
+            <i></i>
+          </div>
+          <img
+            class="experience-loader__character"
+            src="/image/about-loader-character.webp"
+            alt=""
+            width="420"
+            height="455"
+            loading="eager"
+            decoding="async"
+            draggable="false"
+          />
+        </div>
+        <div class="experience-loader__bubble">
+          <strong>
+            {webglReady
+              ? "Building the interactive world"
+              : "Opening the story"}
+          </strong>
+          <span class="experience-loader__typing" aria-hidden="true">
+            <i></i><i></i><i></i>
+          </span>
+        </div>
       </div>
-      <div class="experience-loader__copy">
-        <span>ABOUT · INTERACTIVE STORY</span>
-        <strong>{webglReady ? "Building the experience" : "Opening the story"}</strong>
-      </div>
-      <div class="experience-loader__track" aria-hidden="true"><i></i></div>
     </div>
     <div class="scene-backdrop" aria-hidden="true">
       <canvas
@@ -2361,7 +2844,7 @@
                 title={`${location.title} — ${location.detail}`}
                 onclick={(event) => {
                   event.preventDefault();
-                  openPlaceDetail(index);
+                  openPlaceDetail(index, event.currentTarget);
                 }}
               ><i></i><span>{location.label}</span><b aria-hidden="true">+</b></a>
             {/each}
@@ -2392,7 +2875,8 @@
                 type="button"
                 style={`--brand-a:${project.colors[0]}; --brand-b:${project.colors[1]};`}
                 tabindex={reducedMotion || glitterAlpha > 0.2 ? 0 : -1}
-                onclick={() => openProjectDetail(project)}
+                onclick={(event) =>
+                  openProjectDetail(project, 3, event.currentTarget)}
               ><i></i><span>{project.label}</span><b aria-hidden="true">+</b></button>
             {/each}
           </div>
@@ -2422,7 +2906,8 @@
                 type="button"
                 style={`--brand-a:${project.colors[0]}; --brand-b:${project.colors[1]};`}
                 tabindex={reducedMotion || octopusAlpha > 0.2 ? 0 : -1}
-                onclick={() => openProjectDetail(project)}
+                onclick={(event) =>
+                  openProjectDetail(project, 4, event.currentTarget)}
               ><i></i><span>{project.label}</span><b aria-hidden="true">+</b></button>
             {/each}
           </div>
@@ -2455,7 +2940,8 @@
                 type="button"
                 style={`--brand-a:${project.colors[0]}; --brand-b:${project.colors[1]};`}
                 tabindex={reducedMotion || agentAlpha > 0.2 ? 0 : -1}
-                onclick={() => openProjectDetail(project)}
+                onclick={(event) =>
+                  openProjectDetail(project, 5, event.currentTarget)}
               ><i></i><span>{project.label}</span><b aria-hidden="true">+</b></button>
             {/each}
           </div>
@@ -2528,7 +3014,7 @@
             type="button"
             class="detail-close"
             aria-label="Close details"
-            onclick={closeDetail}
+            onclick={() => closeDetail()}
           ><span aria-hidden="true">×</span></button>
 
           {#if selectedDetail.kind === "place"}
@@ -2876,9 +3362,7 @@
     z-index: 80;
     inset: 0;
     display: grid;
-    place-content: center;
-    justify-items: center;
-    gap: 1.2rem;
+    place-items: center;
     padding: 1.5rem;
     color: var(--about-heading);
     background:
@@ -2899,18 +3383,104 @@
     pointer-events: none;
   }
 
-  .experience-loader__mark {
+  .experience-loader__content {
+    display: grid;
+    justify-items: center;
+    gap: 0;
+    box-sizing: border-box;
+    width: min(21.5rem, calc(100vw - 2rem));
+    padding: 1.2rem 1.3rem 1.4rem;
+    border: 1px solid var(--about-line-strong);
+    border-radius: 2rem;
+    background: var(--about-panel);
+    box-shadow:
+      0 1.5rem 4rem var(--about-shadow),
+      inset 0 1px var(--about-inset);
+    backdrop-filter: blur(20px) saturate(1.15);
+    -webkit-backdrop-filter: blur(20px) saturate(1.15);
+  }
+
+  .experience-loader__scene {
     position: relative;
-    width: 4.8rem;
-    height: 4.8rem;
+    width: 16rem;
+    height: 8.7rem;
+    isolation: isolate;
+  }
+
+  .experience-loader__scene::before {
+    position: absolute;
+    z-index: 0;
+    top: 47%;
+    left: 50%;
+    width: 10rem;
+    height: 10rem;
+    border-radius: 50%;
+    content: "";
+    background: radial-gradient(
+      circle,
+      color-mix(in srgb, var(--about-initial-glow) 16%, transparent),
+      transparent 68%
+    );
+    filter: blur(0.16rem);
+    transform: translate(-50%, -50%);
+  }
+
+  .experience-loader__scene::after {
+    position: absolute;
+    z-index: 2;
+    bottom: 0.05rem;
+    left: 50%;
+    width: 8.6rem;
+    height: 1.2rem;
+    border-radius: 50%;
+    content: "";
+    background: radial-gradient(
+      ellipse,
+      color-mix(in srgb, var(--about-initial-glow) 26%, transparent),
+      transparent 68%
+    );
+    filter: blur(0.24rem);
+    transform: translateX(-50%);
+  }
+
+  .experience-loader__mark {
+    position: absolute;
+    z-index: 1;
+    top: 0.35rem;
+    left: 50%;
+    width: 7.9rem;
+    height: 7.9rem;
+    transform: translateX(-50%);
+  }
+
+  .experience-loader__character {
+    position: absolute;
+    z-index: 3;
+    right: -0.25rem;
+    bottom: 0.5rem;
+    display: block;
+    width: 4.05rem;
+    height: auto;
+    filter:
+      drop-shadow(0 0.75rem 0.9rem rgba(39, 31, 42, 0.18))
+      drop-shadow(0 0 0.7rem color-mix(in srgb, var(--about-initial-glow) 20%, transparent));
+    transform-origin: 50% 92%;
+    animation: experience-loader-character 2.5s ease-in-out infinite;
+    pointer-events: none;
+    user-select: none;
   }
 
   .experience-loader__mark span {
     position: absolute;
-    inset: 0;
+    top: 50%;
+    left: 50%;
+    width: 100%;
+    height: 68%;
     border: 1px solid var(--about-line-strong);
     border-radius: 50%;
-    animation: experience-loader-spin 1.75s linear infinite;
+    transform: translate(-50%, -50%) rotate(-24deg);
+    transform-origin: 50% 50%;
+    animation: experience-loader-orbit-outer 3.2s linear infinite;
   }
 
   .experience-loader__mark span::after {
@@ -2927,10 +3497,11 @@
   }
 
   .experience-loader__mark span:nth-child(2) {
-    inset: 0.72rem;
+    width: 88%;
+    height: 58%;
     border-color: color-mix(in srgb, var(--about-initial-glow) 35%, transparent);
-    animation-duration: 1.2s;
-    animation-direction: reverse;
+    transform: translate(-50%, -50%) rotate(38deg);
+    animation: experience-loader-orbit-inner 2.55s linear infinite;
   }
 
   .experience-loader__mark span:nth-child(2)::after {
@@ -2945,61 +3516,136 @@
 
   .experience-loader__mark i {
     position: absolute;
-    inset: 1.8rem;
+    top: 50%;
+    left: 50%;
+    width: 1.75rem;
+    height: 1.75rem;
     border-radius: 50%;
     background: var(--about-initial-glow);
     box-shadow: 0 0 1.6rem color-mix(in srgb, var(--about-initial-glow) 55%, transparent);
+    transform: translate(-50%, -50%);
     animation: experience-loader-breathe 1.45s ease-in-out infinite;
   }
 
-  .experience-loader__copy {
-    display: grid;
-    justify-items: center;
-    gap: 0.36rem;
+  .experience-loader__bubble {
+    position: relative;
+    z-index: 4;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.7rem;
+    box-sizing: border-box;
+    width: min(17.5rem, 100%);
+    min-height: 3.2rem;
+    margin-top: -0.45rem;
+    padding: 0.8rem 1.05rem;
+    border: 1px solid var(--about-line-strong);
+    border-radius: 1.2rem;
     text-align: center;
+    background: var(--about-panel);
+    box-shadow:
+      0 0.9rem 2.2rem var(--about-shadow),
+      inset 0 1px var(--about-inset);
+    backdrop-filter: blur(18px) saturate(1.15);
+    -webkit-backdrop-filter: blur(18px) saturate(1.15);
   }
 
-  .experience-loader__copy span {
-    color: var(--about-faint);
-    font-size: 0.64rem;
-    font-weight: 700;
-    letter-spacing: 0.2em;
+  .experience-loader__bubble::before {
+    position: absolute;
+    top: -0.39rem;
+    right: 2.15rem;
+    left: auto;
+    width: 0.7rem;
+    height: 0.7rem;
+    border-top: 1px solid var(--about-line-strong);
+    border-left: 1px solid var(--about-line-strong);
+    content: "";
+    background: var(--about-panel);
+    transform: rotate(45deg);
   }
 
-  .experience-loader__copy strong {
+  .experience-loader__bubble strong {
     color: var(--about-heading);
-    font-size: 0.96rem;
+    font-size: 0.92rem;
     font-weight: 560;
+    line-height: 1.35;
     letter-spacing: -0.01em;
   }
 
-  .experience-loader__track {
-    width: min(12rem, 45vw);
-    height: 1px;
-    overflow: hidden;
-    background: var(--about-line);
+  .experience-loader__typing {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 0.22rem;
   }
 
-  .experience-loader__track i {
+  .experience-loader__typing i {
     display: block;
-    width: 48%;
-    height: 100%;
-    background: linear-gradient(90deg, transparent, var(--about-initial-glow), transparent);
-    animation: experience-loader-track 1.35s ease-in-out infinite;
+    width: 0.29rem;
+    height: 0.29rem;
+    border-radius: 50%;
+    background: var(--about-initial-glow);
+    animation: experience-loader-typing 1.15s ease-in-out infinite;
   }
 
-  @keyframes experience-loader-spin {
-    to { transform: rotate(360deg); }
+  .experience-loader__typing i:nth-child(2) {
+    animation-delay: 120ms;
+  }
+
+  .experience-loader__typing i:nth-child(3) {
+    animation-delay: 240ms;
+  }
+
+  @keyframes experience-loader-orbit-outer {
+    from { transform: translate(-50%, -50%) rotate(-24deg); }
+    to { transform: translate(-50%, -50%) rotate(336deg); }
+  }
+
+  @keyframes experience-loader-orbit-inner {
+    from { transform: translate(-50%, -50%) rotate(38deg); }
+    to { transform: translate(-50%, -50%) rotate(-322deg); }
   }
 
   @keyframes experience-loader-breathe {
-    0%, 100% { opacity: 0.62; transform: scale(0.82); }
-    50% { opacity: 1; transform: scale(1.08); }
+    0%, 100% { opacity: 0.62; transform: translate(-50%, -50%) scale(0.82); }
+    50% { opacity: 1; transform: translate(-50%, -50%) scale(1.08); }
   }
 
-  @keyframes experience-loader-track {
-    from { transform: translateX(-110%); }
-    to { transform: translateX(320%); }
+  @keyframes experience-loader-character {
+    0%, 100% { transform: translate3d(0, 0, 0) rotate(-1.2deg); }
+    50% { transform: translate3d(0, -0.25rem, 0) rotate(1deg); }
+  }
+
+  @keyframes experience-loader-typing {
+    0%, 55%, 100% { opacity: 0.3; transform: translateY(0); }
+    25% { opacity: 1; transform: translateY(-0.18rem); }
+  }
+
+  @media (max-width: 420px) {
+    .experience-loader {
+      padding: 0.625rem;
+    }
+
+    .experience-loader__content {
+      width: calc(100vw - 1.25rem);
+      padding: 0.95rem 0.85rem 1.15rem;
+    }
+
+    .experience-loader__scene {
+      width: 13.75rem;
+      height: 8rem;
+    }
+
+    .experience-loader__mark {
+      width: 7.1rem;
+      height: 7.1rem;
+    }
+
+    .experience-loader__character {
+      right: -0.3rem;
+      bottom: 0.45rem;
+      width: 3.55rem;
+    }
   }
 
   .scene-backdrop,
@@ -4056,13 +4702,13 @@
   @media (prefers-reduced-motion: reduce) {
     .experience-loader__mark span,
     .experience-loader__mark i,
-    .experience-loader__track i {
+    .experience-loader__character,
+    .experience-loader__typing i {
       animation: none;
     }
 
-    .experience-loader__track i {
-      width: 100%;
-      opacity: 0.5;
+    .experience-loader__typing i {
+      opacity: 0.6;
     }
 
     .about-experience {
